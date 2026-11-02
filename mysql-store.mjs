@@ -58,18 +58,18 @@ export async function rules(db = pool) {
   return rows[0]?.value || '';
 }
 export async function rooms(db = pool, available = false) {
-  const [rows] = await db.query(`SELECT k.nomor_kamar AS number,k.harga_bulanan AS price FROM kamar k
+  const [rows] = await db.query(`SELECT k.nomor_kamar AS number,k.harga_bulanan AS price,k.status AS state FROM kamar k
     ${available ? "WHERE k.status='tersedia' AND NOT EXISTS (SELECT 1 FROM riwayat_hunian h WHERE h.kamar_id=k.id AND h.tanggal_keluar IS NULL)" : ''}
     ORDER BY k.nomor_kamar`);
-  return rows.map(r => ({ number: r.number, price: Number(r.price) }));
+  return rows.map(r => ({ number: r.number, price: Number(r.price), state: r.state }));
 }
 export async function residents(db = pool, id) {
   const [rows] = await db.execute(`SELECT p.*,f.gender,f.birth,f.origin_phone,f.emergency_address,
-    f.signature,f.accepted_rules,f.agreement,f.payment,f.amount,k.nomor_kamar,h.tanggal_masuk
+    f.signature,f.accepted_rules,f.agreement,f.payment,f.amount,k.nomor_kamar,h.tanggal_masuk,h.tanggal_keluar,h.id AS occupancy_id
     FROM penghuni p
     LEFT JOIN penghuni_form f ON f.penghuni_id=p.id
     LEFT JOIN riwayat_hunian h ON h.id=COALESCE(f.hunian_id,
-      (SELECT MAX(h2.id) FROM riwayat_hunian h2 WHERE h2.penghuni_id=p.id AND h2.tanggal_keluar IS NULL))
+      (SELECT MAX(h2.id) FROM riwayat_hunian h2 WHERE h2.penghuni_id=p.id))
     LEFT JOIN kamar k ON k.id=h.kamar_id ${id === undefined ? '' : 'WHERE p.id=?'} ORDER BY p.id`, id === undefined ? [] : [id]);
   return rows.map(r => ({
     id: String(r.id), name: r.nama_lengkap, nik: r.nik, phone: r.no_hp,
@@ -81,10 +81,11 @@ export async function residents(db = pool, id) {
     emergencyAddress: r.emergency_address || '', signature: r.signature || '',
     rules: r.accepted_rules || '', agreement: !!r.agreement, payment: r.payment || '',
     amount: r.amount == null ? '' : String(Number(r.amount)), room: r.nomor_kamar || '',
-    entry: r.tanggal_masuk || '', created: r.created_at || '',
+    entry: r.tanggal_masuk || '', exit: r.tanggal_keluar || '', active: !!r.occupancy_id && !r.tanggal_keluar, created: r.created_at || '',
   }));
 }
 export async function saveResident(db, d, existing) {
+  if (existing && !existing.active) throw failure('Data penghuni yang sudah keluar hanya dapat dilihat dan diunduh.',409);
   const [roomRows] = await db.execute('SELECT * FROM kamar WHERE nomor_kamar=? FOR UPDATE', [d.room]);
   const room = roomRows[0];
   if (!room) throw failure('Kamar belum terdaftar. Hubungi pengelola.');
@@ -129,4 +130,15 @@ export async function deleteResident(db, d) {
   await db.execute('DELETE FROM riwayat_hunian WHERE penghuni_id=?', [d.id]);
   await db.execute('DELETE FROM penghuni WHERE id=?', [d.id]);
   await releaseRoom(db, d.room);
+}
+
+export async function checkoutResident(db, d, exit) {
+  if (!d.active) throw failure('Penghuni sudah keluar.',409);
+  const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Makassar',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const parsed = typeof exit === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(exit) ? new Date(exit+'T00:00:00Z') : null;
+  if (!parsed || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0,10)!==exit || exit<d.entry || exit>today)
+    throw failure('Tanggal keluar harus valid, tidak sebelum tanggal masuk dan tidak melewati hari ini.');
+  const [result] = await db.execute('UPDATE riwayat_hunian SET tanggal_keluar=?,updated_at=NOW() WHERE penghuni_id=? AND tanggal_keluar IS NULL',[exit,d.id]);
+  if (!result.affectedRows) throw failure('Penghuni sudah keluar.',409);
+  await releaseRoom(db,d.room);
 }

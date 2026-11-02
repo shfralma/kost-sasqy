@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
-import { pool, initialize, transaction, residents as rows, rules, rooms, saveResident, deleteResident, failure } from './mysql-store.mjs';
+import { pool, initialize, transaction, residents as rows, rules, rooms, saveResident, deleteResident, checkoutResident, failure } from './mysql-store.mjs';
 import PDFDocument from 'pdfkit';
 const root = path.resolve(fileURLToPath(new URL('./public/', import.meta.url)));
 const production = process.env.NODE_ENV === 'production';
@@ -49,7 +49,7 @@ async function valid(d, acceptedRules, db) {
   d.room=d.room.trim();
   if(!/^[A-Za-z0-9-]{1,12}$/.test(d.room)) return 'Nomor kamar maksimal 12 karakter: huruf, angka, atau tanda hubung.';
   const existing = await rows(db);
-  if(existing.some(r=>r.id!==d.id&&r.room.toLowerCase()===d.room.toLowerCase())) return 'Kamar tersebut sudah ditempati.';
+  if(existing.some(r=>r.id!==d.id&&r.active&&r.room.toLowerCase()===d.room.toLowerCase())) return 'Kamar tersebut sudah ditempati.';
   if(existing.some(r=>r.id!==d.id&&r.nik===d.nik)) return 'NIK sudah terdaftar.';
   if(!acceptedRules) return 'Tata tertib belum diisi pengelola. Simpan draf terlebih dahulu.';
   const limits={name:150,phone:20,institution:150,institutionPhone:20,emergencyName:150,emergencyPhone:20,relationship:50};
@@ -122,6 +122,15 @@ export const handler=async(req,res)=>{
    if(p==='/api/rules'&&method==='POST'){
     const d=await body(req);if(typeof d.rules!=='string'||d.rules.length>10000)throw failure('Tata tertib maksimal 10.000 karakter.');
     await transaction(db=>db.execute("INSERT INTO settings (setting_key,value) VALUES ('rules',?) ON DUPLICATE KEY UPDATE value=VALUES(value)",[d.rules.trim()]));return json(res,200,{ok:true});
+   }
+   const checkoutPath=p.match(/^\/api\/residents\/(\d+)\/checkout$/);
+   if(checkoutPath&&method==='POST'){
+    const payload=await body(req);
+    await transaction(async db=>{
+      const [d]=await rows(db,checkoutPath[1]);
+      if(!d)throw failure('Penghuni tidak ditemukan.',404);
+      await checkoutResident(db,d,payload.exit);
+    });return json(res,200,{ok:true});
    }
    const residentPath=p.match(/^\/api\/residents\/(\d+)(\/pdf)?$/);
    if(residentPath){

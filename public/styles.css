@@ -96,3 +96,6 @@
 @media(max-width:480px){.form-header-nav{gap:12px;font-size:12px}.admin-back{padding:8px 10px}}
 
 .login-back-home{display:block;width:fit-content;margin:16px auto 0;font-size:13px;line-height:20px;color:#444;text-decoration:underline;text-underline-offset:3px}.login-back-home:hover{color:#111}
+
+.resident-filter{display:flex;align-items:center;gap:12px;margin-top:20px;font-size:13px;flex-wrap:wrap}.resident-filter select{padding:10px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#202020}.checkout-date{display:block;color:#666;font-size:11px;margin-top:6px}#checkout-form{display:grid;gap:16px;min-width:0}#checkout-form input{width:100%;min-width:0}.modal-actions:has(#checkout-form){align-items:flex-start;flex-wrap:wrap}#checkout-form{flex:1 1 100%}.room-table .row-btn{margin-bottom:6px}
+#checkout-error:empty{display:none}.modal-actions:has(#checkout-form) #modal-cancel{order:2}#checkout-form{order:1}

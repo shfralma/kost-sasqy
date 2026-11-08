@@ -6,7 +6,17 @@ let currentData={},publicData={rooms:[],rules:''},residents=[],rooms=[],signatur
 let toastTimer;
 let formAdmin=false;
 function toast(text){const t=document.querySelector('#toast');t.textContent=text;t.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.style.display='none',4000);}
-async function api(url,options={}){const res=await fetch(`/api/${url}`,{...options,headers:{'Content-Type':'application/json',...options.headers}});const data=await res.json();if(!res.ok)throw Error(data.error||'Terjadi kesalahan.');return data;}
+async function api(url,options={}){
+ const unavailable='Layanan sedang tidak tersedia. Silakan coba kembali beberapa saat lagi.';
+ let res;
+ try{res=await fetch(`/api/${url}`,{...options,headers:{'Content-Type':'application/json',...options.headers}});}
+ catch{throw Error('Tidak dapat terhubung ke server. Periksa koneksi internet, lalu coba lagi.');}
+ let data;
+ try{data=await res.json();}
+ catch{throw Error(unavailable);}
+ if(!res.ok)throw Error(res.status>=500?unavailable:data.error||'Terjadi kesalahan.');
+ return data;
+}
 const send=(url,data,method='POST')=>api(url,{method,body:JSON.stringify(data)});
 function scale(){const el=document.querySelector('.stage');if(el)el.style.removeProperty('zoom');}
 window.addEventListener('resize',scale);
